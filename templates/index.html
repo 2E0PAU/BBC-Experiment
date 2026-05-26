@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Springwatch Wildlife Cams</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+    <script defer src="https://unpkg.com/lucide@latest"></script>
+    <script defer src="{{ url_for('static', filename='app.js', v=2) }}"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">BBC Springwatch</p>
+        <h1>Wildlife Cam Wall</h1>
+      </div>
+      <nav class="toolbar" aria-label="Dashboard controls">
+        <button id="refreshButton" class="tool-button" type="button" title="Refresh streams">
+          <i data-lucide="refresh-cw"></i>
+          <span>Refresh</span>
+        </button>
+        <a class="tool-button" href="{{ official_live_url }}" target="_blank" rel="noreferrer" title="Open BBC live page">
+          <i data-lucide="external-link"></i>
+          <span>BBC Live</span>
+        </a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="notice" aria-label="Playback note">
+        <strong>Public BBC page data, no stored stream URLs.</strong>
+        The dashboard discovers the current Springwatch webcast items from the BBC live page and asks BBC's media-selector for playback URLs while you load the app. Playback still depends on BBC availability, location checks, and the live broadcast window.
+      </section>
+
+      <section class="status-row" aria-live="polite">
+        <div>
+          <span class="status-label">State</span>
+          <strong id="statusText">Loading</strong>
+        </div>
+        <div>
+          <span class="status-label">Last refresh</span>
+          <strong id="refreshTime">-</strong>
+        </div>
+      </section>
+
+      <section id="streamGrid" class="stream-grid" aria-label="Live wildlife streams"></section>
+    </main>
+
+    <template id="streamCardTemplate">
+      <article class="stream-card">
+        <div class="player-frame">
+          <video class="stream-video" controls muted playsinline></video>
+          <img class="stream-poster" alt="">
+          <div class="player-message"></div>
+        </div>
+        <div class="card-body">
+          <div>
+            <h2 class="stream-title"></h2>
+            <p class="stream-copy"></p>
+          </div>
+          <dl class="stream-meta">
+            <div>
+              <dt>Status</dt>
+              <dd class="stream-status"></dd>
+            </div>
+            <div>
+              <dt>Window</dt>
+              <dd class="stream-window"></dd>
+            </div>
+          </dl>
+          <div class="card-actions">
+            <button class="tool-button reload-stream" type="button" title="Reload this player">
+              <i data-lucide="rotate-cw"></i>
+              <span>Reload</span>
+            </button>
+            <a class="tool-button official-link" target="_blank" rel="noreferrer" title="Open on BBC">
+              <i data-lucide="external-link"></i>
+              <span>BBC</span>
+            </a>
+          </div>
+        </div>
+      </article>
+    </template>
+  </body>
+</html>
