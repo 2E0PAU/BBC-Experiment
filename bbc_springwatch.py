@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
-import re
+import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any, Iterable
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class BBCSpringwatchError(RuntimeError):
@@ -54,37 +58,62 @@ class BBCSpringwatchClient:
         self.session = session or requests.Session()
         self.cache_seconds = cache_seconds
         self._cache: tuple[float, list[Stream]] | None = None
+        self._lock = threading.Lock()
 
     def get_streams(self) -> list[Stream]:
-        if self._cache and time.time() - self._cache[0] < self.cache_seconds:
-            return self._cache[1]
+        with self._lock:
+            if self._cache and time.time() - self._cache[0] < self.cache_seconds:
+                return self._cache[1]
 
+        # Network work is done without holding the lock so concurrent requests
+        # are not serialised behind a slow BBC response.
+        streams = self._build_streams()
+
+        with self._lock:
+            self._cache = (time.time(), streams)
+        return streams
+
+    def _build_streams(self) -> list[Stream]:
         html = self._fetch_text(self.official_live_url)
-        streams = []
-        for stream in parse_streams(html, self.official_live_url):
-            playback = self._get_playback(stream.vpid)
-            streams.append(
-                Stream(
-                    title=stream.title,
-                    vpid=stream.vpid,
-                    pid=stream.pid,
-                    synopsis=stream.synopsis,
-                    image_url=stream.image_url,
-                    status=stream.status,
-                    availability_type=stream.availability_type,
-                    schedule_start=stream.schedule_start,
-                    schedule_end=stream.schedule_end,
-                    lead_media=stream.lead_media,
-                    official_url=stream.official_url,
-                    playback=playback,
-                )
+        parsed = parse_streams(html, self.official_live_url)
+        if not parsed:
+            raise BBCSpringwatchError(
+                "No Springwatch wildlife camera streams were found on the BBC live page."
             )
 
-        if not streams:
-            raise BBCSpringwatchError("No Springwatch wildlife camera streams were found on the BBC live page.")
-
-        self._cache = (time.time(), streams)
+        playback_by_vpid = self._resolve_playback(parsed)
+        streams = [
+            Stream(**asdict(stream), playback=playback_by_vpid.get(stream.vpid, []))
+            for stream in parsed
+        ]
+        logger.info("Discovered %d Springwatch stream(s) on the BBC live page.", len(streams))
         return streams
+
+    def _resolve_playback(self, parsed: list[ParsedStream]) -> dict[str, list[Playback]]:
+        """Fetch playback for each stream in parallel, tolerating per-stream failures.
+
+        A failure for one camera (geo-block, expired media, transient 5xx) must not
+        take down the whole wall, so each error is logged and that stream is returned
+        with empty playback for the frontend to handle gracefully.
+        """
+        playback_by_vpid: dict[str, list[Playback]] = {}
+        with ThreadPoolExecutor(max_workers=min(8, len(parsed))) as executor:
+            futures = {
+                executor.submit(self._get_playback, stream.vpid): stream for stream in parsed
+            }
+            for future in as_completed(futures):
+                stream = futures[future]
+                try:
+                    playback_by_vpid[stream.vpid] = future.result()
+                except BBCSpringwatchError as exc:
+                    logger.warning(
+                        "Could not resolve playback for %r (%s): %s",
+                        stream.title,
+                        stream.vpid,
+                        exc,
+                    )
+                    playback_by_vpid[stream.vpid] = []
+        return playback_by_vpid
 
     def _fetch_text(self, url: str) -> str:
         try:
@@ -179,13 +208,29 @@ def parse_streams(html: str, official_url: str) -> list[ParsedStream]:
 
 
 def extract_initial_data(html: str) -> dict[str, Any]:
-    match = re.search(r'window\.__INITIAL_DATA__="((?:\\.|[^"\\])*)";', html, re.DOTALL)
-    if not match:
+    marker = "window.__INITIAL_DATA__"
+    start = html.find(marker)
+    if start == -1:
         raise BBCSpringwatchError("BBC page did not contain window.__INITIAL_DATA__.")
 
+    equals = html.find("=", start + len(marker))
+    if equals == -1:
+        raise BBCSpringwatchError("BBC page did not contain window.__INITIAL_DATA__.")
+
+    value_start = equals + 1
+    while value_start < len(html) and html[value_start] in " \t\r\n":
+        value_start += 1
+    if value_start >= len(html):
+        raise BBCSpringwatchError("BBC page data was empty.")
+
+    # BBC ships this either as a JSON string whose contents are themselves JSON
+    # (escaped form) or as a bare JSON object literal. raw_decode handles both,
+    # correctly stopping at the end of the value and ignoring the trailing ";"
+    # and the rest of the page (no brace-matching needed).
+    decoder = json.JSONDecoder()
     try:
-        decoded = json.loads(f'"{match.group(1)}"')
-        payload = json.loads(decoded)
+        value, _ = decoder.raw_decode(html, value_start)
+        payload = json.loads(value) if isinstance(value, str) else value
     except json.JSONDecodeError as exc:
         raise BBCSpringwatchError("BBC page data could not be decoded.") from exc
 

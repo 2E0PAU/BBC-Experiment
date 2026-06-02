@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 
 from flask import Flask, jsonify, render_template
@@ -48,5 +49,10 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "5000")))
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     app.run(host=args.host, port=args.port, debug=args.debug)

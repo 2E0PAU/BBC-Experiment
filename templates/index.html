@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script defer src="https://unpkg.com/lucide@latest"></script>
-    <script defer src="{{ url_for('static', filename='app.js', v=2) }}"></script>
+    <script defer src="{{ url_for('static', filename='app.js', v=4) }}"></script>
   </head>
   <body>
     <header class="app-header">
@@ -33,15 +33,12 @@
         The dashboard discovers the current Springwatch webcast items from the BBC live page and asks BBC's media-selector for playback URLs while you load the app. Playback still depends on BBC availability, location checks, and the live broadcast window.
       </section>
 
-      <section class="status-row" aria-live="polite">
-        <div>
-          <span class="status-label">State</span>
+      <section class="status-bar" aria-live="polite">
+        <span class="status-pill">
+          <span class="status-dot loading" id="statusDot"></span>
           <strong id="statusText">Loading</strong>
-        </div>
-        <div>
-          <span class="status-label">Last refresh</span>
-          <strong id="refreshTime">-</strong>
-        </div>
+        </span>
+        <span class="status-refresh">Updated <strong id="refreshTime">-</strong></span>
       </section>
 
       <section id="streamGrid" class="stream-grid" aria-label="Live wildlife streams"></section>
@@ -50,6 +47,7 @@
     <template id="streamCardTemplate">
       <article class="stream-card">
         <div class="player-frame">
+          <span class="live-badge" hidden><span class="live-dot"></span>Live</span>
           <video class="stream-video" controls muted playsinline></video>
           <img class="stream-poster" alt="">
           <div class="player-message"></div>
